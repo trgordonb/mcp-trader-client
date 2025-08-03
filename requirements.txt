@@ -1,3 +1,15 @@
 gradio[mcp]
 smolagents[mcp]
 python-dotenv
+pandas
+numpy
+matplotlib
+plotly
+seaborn
+scikit-learn
+scipy
+requests
+statsmodels
+pandas-datareader
+yfinance
+beautifulsoup4
