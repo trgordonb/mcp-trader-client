@@ -13,3 +13,4 @@ statsmodels
 pandas-datareader
 yfinance
 beautifulsoup4
+kaleido
