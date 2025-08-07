@@ -6,10 +6,34 @@ from smolagents import CodeAgent, MCPClient, AzureOpenAIModel, DuckDuckGoSearchT
 from openinference.instrumentation.smolagents import SmolagentsInstrumentor
 from fastmcp.server.auth.providers.bearer import RSAKeyPair
 from pydantic import SecretStr
-
+import logging
 
 load_dotenv()
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+css = '''
+footer{display:none !important}
+#replyimage{
+    background-color: coral;
+}
+'''
+
+logger.info("Initialize Langfuse client")
+langfuse = get_client()
+
+# Verify connection
+if langfuse.auth_check():
+    logger.info("Langfuse client is authenticated and ready!")
+else:
+    logger.error("Authentication failed. Please check your credentials and host.")
+
+logger.info("Initialize Smolagents Instrumentor")
+SmolagentsInstrumentor().instrument()
+
+
+logger.info("Read key pair and create token")
 # Read key pair
 with open("private.pem", "r") as private_key_file:
     private_key = private_key_file.read()
@@ -28,30 +52,15 @@ token = key_pair.create_token(
     subject="user@example.com",
     issuer="https://mcp-server-293232845809.us-central1.run.app",
     audience="my-mcp-server",
-    scopes=["read", "write"]
+    scopes=["read", "write"],
+    expires_in_seconds=18000
 )
-
+logger.info("Token generated")
 
 mcp_client = MCPClient({"url": os.getenv("MCP_SERVER_URL"), "headers": {"Authorization": f"Bearer {token}"},"transport": "streamable-http"})
 
-css = '''
-footer{display:none !important}
-#replyimage{
-    background-color: coral;
-}
-'''
-
-langfuse = get_client()
-
-# Verify connection
-if langfuse.auth_check():
-    print("Langfuse client is authenticated and ready!")
-else:
-    print("Authentication failed. Please check your credentials and host.")
-
-SmolagentsInstrumentor().instrument()
-
 try:
+    logger.info("Connect to mcp client and get tools")
     tools = mcp_client.get_tools()
     search_tool = DuckDuckGoSearchTool()
     tools.append(search_tool)
@@ -66,14 +75,14 @@ try:
         tools=[*tools], 
         model=model, 
         additional_authorized_imports=[
-            "pandas", "numpy", "datetime", "sklearn", "plotly", "plotly.express", "plotly.graph_objects",
-            "json", "ast", "urllib", "base64", "requests", "yfinance", "kaleido", "plotly.graph_objs",
+            "pandas", "numpy", "datetime", "sklearn", "matplotlib.pyplot", 
+            "json", "ast", "urllib", "base64", "requests", "yfinance", "kaleido", 
             "pandas_datareader.data", "statsmodels", "bs4", "seaborn", "io"
         ],
         instructions="""
         Use the duckduckgo search tool for getting news of the company mentioned in the query.
+        When using the analyze_stock tool, you can pass on the text produced by the tool verbatim as final answer.
         Return only news in English in numbered list form, each item in a new line together with the source and its url.
-        When requested for chart plotting, use the plotly library and unless otherwise stated in request, plot using line chart type. 
         Remove any null data on the x-axis, for example when the date is a holiday and no price data is available.
         If a plot is produced, first generate the base64 encoded image string and then 
         construct a Markdown string for the chatbot message, using the <img> tag 
@@ -85,6 +94,7 @@ try:
         fn=lambda message, history: str(agent.run(message)),
         type="messages",
         title="Agent with Stock Analysis MCP Tools",
+        run_examples_on_click=False,
         examples=[
             "Analyze the stock AAPL",
             "What is the current RSI of NVDA compared with S&P500?",
@@ -96,4 +106,5 @@ try:
 
     demo.launch()
 finally:
+    logger.info("Disconnect mcp client")
     mcp_client.disconnect()
